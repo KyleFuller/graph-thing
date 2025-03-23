@@ -1,0 +1,58 @@
+#!/usr/bin/env python3.13
+
+from node import fs_path_to_node, Node
+from edge import Edge
+from checked_creation import checked_create_biconnected_node, checked_create_connected_node, checked_create_biedge_idempotent, checked_create_edge_idempotent
+import sys
+import os
+from pathlib import Path as FSPath
+
+def validate_edge_name(name: str) -> None:
+    if not name or '/' in name:
+        raise ValueError(f"Invalid edge name: {name}")
+
+def get_auto_name(path: str) -> str:
+    if path == '.':
+        return os.path.basename(os.environ.get('PWD', ''))
+    return os.path.basename(path)
+
+def compound_checked_create_edge(
+            source: Node, target: Node | None, name_to: str, bidirectional: bool, name_from: str
+        ) -> tuple[Node | None, Edge, Edge | None]:
+
+    if target is None:
+        if bidirectional:
+            return checked_create_biconnected_node(source, name_to, name_from)
+        return *checked_create_connected_node(source, name_to), None
+    if bidirectional:
+        return None, *checked_create_biedge_idempotent(source, target, name_to, name_from)
+    return None, checked_create_edge_idempotent(source, target, name_to), None
+
+def main():
+    if len(sys.argv) not in [4, 6] or (len(sys.argv) == 6 and sys.argv[4] != '-b'):
+        print("Usage: make-edge <source> <target> <forward-name> [-b <backward-name>]", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        source_path = FSPath(sys.argv[1])
+        target_path = FSPath(sys.argv[2])
+        given_forward_name = sys.argv[3]
+        given_backward_name = sys.argv[5] if len(sys.argv) == 6 else None
+        
+        source = fs_path_to_node(source_path)
+        target = None if target_path.name == '-a' else fs_path_to_node(target_path)
+        
+        forward_name = get_auto_name(str(target_path)) if given_forward_name == '-a' else given_forward_name
+        backward_name = get_auto_name(str(source_path)) if given_backward_name == '-a' else given_backward_name
+        
+        validate_edge_name(forward_name)
+        if backward_name:
+            validate_edge_name(backward_name)
+        
+        compound_checked_create_edge(source, target, forward_name, bool(backward_name), backward_name or '')
+        
+    except (ValueError, OSError) as e:
+        print(f"Error: {str(e)}", file=sys.stderr)
+        sys.exit(1)
+if __name__ == "__main__":
+    main()

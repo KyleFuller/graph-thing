@@ -1,0 +1,42 @@
+#!/usr/bin/env python3.13
+
+import sys
+from pathlib import Path as FSPath
+from node import Node, fs_path_to_node
+from edge import Edge
+from graph_dir import GRAPH_DIR
+from graph_root import GRAPH_ROOT
+from subgraph import Subgraph
+
+def find_edges_to_node(target_node: Node) -> list[Edge]:
+    root = fs_path_to_node(GRAPH_ROOT)
+    graph = Subgraph(root)
+    
+    inbound_edges: list[Edge] = []
+    
+    for source_node in graph.nodes:
+        for edge in graph.get_edges(source_node):
+            if edge.target == target_node:
+                inbound_edges.append(edge)
+    
+    return inbound_edges
+
+def main() -> None:
+    if len(sys.argv) != 2:
+        print("Usage: to <target_node_fs_path>", file=sys.stderr)
+        sys.exit(1)
+    
+    try:
+        target_fs_path = FSPath(sys.argv[1])
+        target_node = fs_path_to_node(target_fs_path)
+        inbound_edges = find_edges_to_node(target_node)
+        
+        for edge in inbound_edges:
+            print(f"{GRAPH_DIR}/{edge.source.fs_path.name}/{edge.name}")
+            
+    except (ValueError, OSError) as e:
+        print(f"Error: {str(e)}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,48 @@
+#!/usr/bin/env python3.13
+
+import sys
+from pathlib import Path as FSPath
+from node import Node, fs_path_to_node
+from edge import Edge, fs_path_to_edge
+from graph_root import GRAPH_ROOT
+from subgraph import Subgraph, bfs
+
+def is_edge_critical(edge: Edge) -> bool:
+    root = fs_path_to_node(GRAPH_ROOT)
+    graph = Subgraph(root)
+    target = edge.target    
+
+    reachable_without_edge: set[Node] = set()
+    
+    def should_traverse(e: Edge) -> bool:
+        return not (e.source == edge.source and e.name == edge.name)
+    
+    def collect_node(node: Node) -> None:
+        reachable_without_edge.add(node)
+    
+    bfs(
+        root,
+        get_adjacencies=graph.get_edges,
+        should_traverse=should_traverse,
+        get_target=lambda e: e.target,
+        visit=collect_node,
+    )
+    
+    return target not in reachable_without_edge
+
+def main() -> None:
+    if len(sys.argv) != 2:
+        print("Usage: is-edge-critical <edge_fs_path>", file=sys.stderr)
+        sys.exit(1)
+    
+    try:
+        edge_fs_path = FSPath(sys.argv[1])
+        edge = fs_path_to_edge(edge_fs_path)
+        result = is_edge_critical(edge)
+        print("yes" if result else "no")
+    except (ValueError, OSError) as e:
+        print(f"Error: {str(e)}", file=sys.stderr)
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()

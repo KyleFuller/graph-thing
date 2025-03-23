@@ -1,0 +1,98 @@
+#!/usr/bin/env python3.13
+
+import sys
+import subprocess
+import hashlib
+import colorsys
+from pathlib import Path as FSPath
+from node import Node, fs_path_to_node
+from subgraph import Subgraph
+
+# Color adjustment variables
+HUE_RANGE = (0, 1)
+SATURATION_RANGE = (0.5, 1.0)
+LIGHTNESS_RANGE = (0.6, 0.8)
+
+# Node size - constant size for all nodes
+NODE_SIZE = 0.125
+
+def generate_color_from_name(name: str) -> str:
+    hash_object = hashlib.md5(name.encode())
+    hash_hex = hash_object.hexdigest()
+
+    hue = (int(hash_hex[:2], 16) / 255.0) * (HUE_RANGE[1] - HUE_RANGE[0]) + HUE_RANGE[0]
+    sat = (int(hash_hex[2:4], 16) / 255.0) * (SATURATION_RANGE[1] - SATURATION_RANGE[0]) + SATURATION_RANGE[0]
+    lig = (int(hash_hex[4:6], 16) / 255.0) * (LIGHTNESS_RANGE[1] - LIGHTNESS_RANGE[0]) + LIGHTNESS_RANGE[0]
+
+    r, g, b = colorsys.hls_to_rgb(hue, lig, sat)
+
+    return f"#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}"
+
+def generate_graphviz(graph: Subgraph, start_node: Node) -> str:
+    dot = ['digraph G {',
+           '    layout=sfdp;',
+           '    overlap=false;',
+           '    splines=true;',
+           '    bgcolor="#000000";',
+           '    node [shape=circle, style=solid, color="#ffffff", penwidth=0.2, fontsize=0];',
+           '    edge [fontsize=2, penwidth=0.2, arrowsize=0.2];',
+           '    graph [ranksep=2, nodesep=0.1];']
+
+    # Create node entries with uniform size
+    node_indices = {node: i for i, node in enumerate(graph.nodes)}
+    for node, i in node_indices.items():
+        node_attrs = f'width={NODE_SIZE}, height={NODE_SIZE}, label=""'
+        if node.fs_path == start_node.fs_path:
+            node_attrs += ', fillcolor="#ffffff", fontcolor="#000000", shape=square'
+        dot.append(f'    node{i} [{node_attrs}];')
+
+    # Create edge entries
+    for node in graph.nodes:
+        source_index = node_indices[node]
+        for edge in graph.get_edges(node):
+            target = edge.target
+            if target in node_indices:
+                target_index = node_indices[target]
+                color = generate_color_from_name(edge.name)
+                dot.append(f'    node{source_index} -> node{target_index} [label="{edge.name}", color="{color}", fontcolor="{color}"];')
+
+    dot.append('}')
+    return '\n'.join(dot)
+
+def visualize_graph(start_node_path: FSPath, output_file: str) -> None:
+    try:
+        start_node = fs_path_to_node(start_node_path)
+        graph = Subgraph(start_node)
+        
+        if not graph.nodes:
+            print("Error: No reachable nodes found.")
+            sys.exit(1)
+
+        dot_representation = generate_graphviz(graph, start_node)
+
+        process = subprocess.Popen(['sfdp', '-Tpng', '-Gdpi=300', '-Gsize=20,20!', '-o', output_file],
+                                  stdin=subprocess.PIPE,
+                                  stderr=subprocess.PIPE)
+        _, stderr = process.communicate(dot_representation.encode())
+
+        if process.returncode != 0:
+            print(f"Error generating visualization: {stderr.decode()}")
+            sys.exit(1)
+
+        print(f"High-resolution visualization saved to {output_file}")
+
+    except ValueError as e:
+        print(f"Error: {str(e)}")
+        sys.exit(1)
+    except subprocess.CalledProcessError as e:
+        print(f"Error running Graphviz: {e}")
+        sys.exit(1)
+
+if __name__ == "__main__":
+    if len(sys.argv) != 3:
+        print("Usage: viz-graph <start_node> <output_file.png>")
+        sys.exit(1)
+
+    start_node_path = FSPath(sys.argv[1])
+    output_file = sys.argv[2]
+    visualize_graph(start_node_path, output_file)
